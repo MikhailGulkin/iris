@@ -129,13 +129,14 @@ func (c *DefaultClient) WritePipe(ctx context.Context) error {
 			c.logger.Infow("WritePipe ctx done", "id", c.GetClientID())
 			return nil
 		case msg, ok := <-c.pipeProcessor.ProcessWrite():
+			if !ok {
+				return nil
+			}
 			err := c.conn.SetWriteDeadline(time.Now().Add(writeWait))
 			if err != nil {
 				return err
 			}
-			if !ok {
-				return nil
-			}
+
 			err = c.conn.WriteMessage(websocket.TextMessage, msg)
 			if err != nil {
 				return err
