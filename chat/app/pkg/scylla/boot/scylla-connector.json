@@ -1,0 +1,17 @@
+{
+  "name": "scylla-cdc-connector",
+  "config": {
+    "connector.class": "com.scylladb.cdc.debezium.connector.ScyllaConnector",
+    "scylla.name": "scylla-cluster",
+    "scylla.cluster.ip.addresses": "scylla-node1:9042",
+    "scylla.table.names": "chat.messages,chat.chats",
+    "tasks.max": "3",
+    "key.converter": "org.apache.kafka.connect.json.JsonConverter",
+    "value.converter": "org.apache.kafka.connect.json.JsonConverter",
+    "key.converter.schemas.enable": "true",
+    "value.converter.schemas.enable": "true",
+    "poll.interval.ms": "100",
+    "scylla.query.time.window.size": "10",
+    "scylla.confidence.window.size": "100"
+  }
+}
