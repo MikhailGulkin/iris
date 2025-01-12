@@ -16,3 +16,6 @@ type Consumer interface {
 type ReadProcessorFabric[R ws.ReadPipeProcessor] interface {
 	CreateReadProcessor(ctx context.Context) R
 }
+type QueueFabric[Q usecase.Queue] interface {
+	CreateQueue(ctx context.Context) Q
+}

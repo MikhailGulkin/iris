@@ -2,38 +2,38 @@ package fabric
 
 import (
 	"api/app/internal/delivery/websocket"
-	"api/app/internal/infra/shared"
+	"api/app/internal/usecase"
 	"context"
 	"github.com/MikhailGulkin/packages/ws"
 )
 
-type PipeProcessorFabric[C Consumer, R ws.ReadPipeProcessor] struct {
-	queueSize      int
+type PipeProcessorFabric[C Consumer, Q usecase.Queue, R ws.ReadPipeProcessor] struct {
+	queueFabric    QueueFabric[Q]
 	consumerFabric ConsumerFabric[C]
-	read           ReadProcessorFabric[R]
+	readFabric     ReadProcessorFabric[R]
 }
 
-func NewPipeProcessorFabric[C Consumer, R ws.ReadPipeProcessor](
-	queueSizeInt int,
+func NewPipeProcessorFabric[C Consumer, Q usecase.Queue, R ws.ReadPipeProcessor](
+	queueFabric QueueFabric[Q],
 	fabric ConsumerFabric[C],
 	read ReadProcessorFabric[R],
-) *PipeProcessorFabric[C, R] {
-	return &PipeProcessorFabric[C, R]{
-		queueSize:      queueSizeInt,
+) *PipeProcessorFabric[C, Q, R] {
+	return &PipeProcessorFabric[C, Q, R]{
+		queueFabric:    queueFabric,
 		consumerFabric: fabric,
-		read:           read,
+		readFabric:     read,
 	}
 }
 
-func (p *PipeProcessorFabric[C, R]) NewPipeProcessor(ctx context.Context, uniqueID string) (ws.PipeProcessor, error) {
-	queue := shared.NewQueue(p.queueSize)
+func (p *PipeProcessorFabric[C, Q, R]) NewPipeProcessor(ctx context.Context, uniqueID string) (ws.PipeProcessor, error) {
+	queue := p.queueFabric.CreateQueue(ctx)
 
 	consumer, err := p.consumerFabric.CreateConsumer(ctx, queue, uniqueID)
 	if err != nil {
 		return nil, err
 	}
 	go consumer.Consume(context.WithoutCancel(ctx))
-	readProcessor := p.read.CreateReadProcessor(ctx)
+	readProcessor := p.readFabric.CreateReadProcessor(ctx)
 	writeProcessor := websocket.NewWriteProcessor(queue)
 
 	return NewProcessorImpl(

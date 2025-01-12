@@ -35,7 +35,7 @@ func (c *ConsumerHandler) Consume(ctx context.Context, msg <-chan amqp.Delivery)
 			return
 		case msg, ok := <-msg:
 			if !ok {
-				c.logger.Error("channel closed unexpectedly")
+				c.logger.Info("channel closed")
 				return
 			}
 			func() {

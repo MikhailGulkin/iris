@@ -41,8 +41,9 @@ func main() {
 	)
 
 	readProcessorFabric := websocket.NewReadProcessorFabric(messageUc, valid)
+	queueFabric := fabric.NewQueueFabricImpl(100)
 	pipeProcessorFabric := fabric.NewPipeProcessorFabric(
-		100,
+		queueFabric,
 		rabbitConsumerFabric,
 		readProcessorFabric,
 	)
