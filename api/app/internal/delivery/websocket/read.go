@@ -44,3 +44,22 @@ func (r *ReadProcessor) ProcessRead(ctx context.Context, messageType int, msg []
 
 	return nil, ErrInvalidMessage
 }
+
+type ReadProcessorFabric struct {
+	handler   ReadProcessorHandler
+	validator *validator.Validate
+}
+
+func NewReadProcessorFabric(
+	handler ReadProcessorHandler,
+	validator *validator.Validate,
+) *ReadProcessorFabric {
+	return &ReadProcessorFabric{
+		handler:   handler,
+		validator: validator,
+	}
+}
+
+func (r *ReadProcessorFabric) CreateReadProcessor(_ context.Context) *ReadProcessor {
+	return NewReadProcessor(r.handler, r.validator)
+}

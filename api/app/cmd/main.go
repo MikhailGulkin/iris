@@ -1,8 +1,11 @@
 package main
 
 import (
-	"api/app/cmd/fabric"
+	"api/app/internal/delivery/fabric"
+	rabbitD "api/app/internal/delivery/rabbit"
+	"api/app/internal/delivery/websocket"
 	kafkaP "api/app/internal/infra/kafka"
+	"api/app/internal/usecase"
 	"context"
 	"github.com/MikhailGulkin/packages/kafka/producer"
 	log "github.com/MikhailGulkin/packages/logger"
@@ -27,16 +30,21 @@ func main() {
 		return
 	}
 	kafkaProducer := kafkaP.NewProducer(kafkaWriter)
-	pipeProcessorFabric := fabric.NewPipeProcessorFabric(
-		rabbit.Config{
-			URL:          "amqp://guest:guest@localhost:5672/",
-			Exchange:     "user.messages",
-			QueuePattern: "user.id",
-		},
-		100,
+	messageUc := usecase.NewMessageHandler(kafkaProducer)
+	rabbitConsumerFabric := rabbitD.NewConsumerHandlerFabric(rabbit.Config{
+		URL:          "amqp://guest:guest@localhost:5672/",
+		Exchange:     "user.messages",
+		QueuePattern: "user.id",
+	},
 		logger,
 		valid,
-		kafkaProducer,
+	)
+
+	readProcessorFabric := websocket.NewReadProcessorFabric(messageUc, valid)
+	pipeProcessorFabric := fabric.NewPipeProcessorFabric(
+		100,
+		rabbitConsumerFabric,
+		readProcessorFabric,
 	)
 
 	manager := ws.NewManager(ws.WithProcessorFabric(pipeProcessorFabric))

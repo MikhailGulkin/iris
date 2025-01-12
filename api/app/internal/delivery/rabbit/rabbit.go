@@ -5,32 +5,35 @@ import (
 	"context"
 	"encoding/json"
 	log "github.com/MikhailGulkin/packages/logger"
+	"github.com/MikhailGulkin/packages/rabbit"
 	"github.com/go-playground/validator/v10"
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
 type ConsumerHandler struct {
-	msg       <-chan amqp.Delivery
 	logger    log.Logger
 	validator *validator.Validate
 	handler   EventHandler
 }
 
-func NewConsumerHandler(msg <-chan amqp.Delivery, logger log.Logger, validator *validator.Validate, handler EventHandler) *ConsumerHandler {
+func NewConsumerHandler(
+	logger log.Logger,
+	validator *validator.Validate,
+	handler EventHandler,
+) *ConsumerHandler {
 	return &ConsumerHandler{
-		msg:       msg,
 		logger:    logger,
 		validator: validator,
 		handler:   handler,
 	}
 }
 
-func (c *ConsumerHandler) Consume(ctx context.Context) {
+func (c *ConsumerHandler) Consume(ctx context.Context, msg <-chan amqp.Delivery) {
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case msg, ok := <-c.msg:
+		case msg, ok := <-msg:
 			if !ok {
 				c.logger.Error("channel closed unexpectedly")
 				return
@@ -57,5 +60,65 @@ func (c *ConsumerHandler) Consume(ctx context.Context) {
 				}
 			}()
 		}
+	}
+}
+
+type ConsumerHandlerFabric struct {
+	rabbitConfig rabbit.Config
+	logger       log.Logger
+	validator    *validator.Validate
+}
+
+type ConsumerHandlerFacade struct {
+	handler *ConsumerHandler
+	conn    *rabbit.Conn
+	msg     <-chan amqp.Delivery
+}
+
+func (c *ConsumerHandlerFacade) Consume(ctx context.Context) {
+	c.handler.Consume(ctx, c.msg)
+}
+
+func (c *ConsumerHandlerFacade) Close() error {
+	return c.conn.Close()
+}
+
+func (c *ConsumerHandlerFabric) CreateConsumer(
+	_ context.Context,
+	queue usecase.Queue,
+	uniqueID string,
+) (*ConsumerHandlerFacade, error) {
+	conn, err := rabbit.NewRabbitCh(c.rabbitConfig)
+	if err != nil {
+		return nil, err
+	}
+	err = conn.DeclareAndBindQueue(uniqueID, "")
+	if err != nil {
+		return nil, err
+	}
+	msg, err := conn.Consume("", "", false, false, false, false, nil)
+	if err != nil {
+		return nil, err
+	}
+	rabbitHandler := usecase.NewEventHandler(queue)
+
+	handler := NewConsumerHandler(c.logger, c.validator, rabbitHandler)
+
+	return &ConsumerHandlerFacade{
+		msg:     msg,
+		conn:    conn,
+		handler: handler,
+	}, nil
+}
+
+func NewConsumerHandlerFabric(
+	rabbitConfig rabbit.Config,
+	logger log.Logger,
+	validator *validator.Validate,
+) *ConsumerHandlerFabric {
+	return &ConsumerHandlerFabric{
+		rabbitConfig: rabbitConfig,
+		logger:       logger,
+		validator:    validator,
 	}
 }

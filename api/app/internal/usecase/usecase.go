@@ -6,14 +6,12 @@ import (
 )
 
 type EventUC struct {
-	Queue  Queue
-	Broker Broker
+	Queue Queue
 }
 
-func NewEventHandler(queue Queue, broker Broker) *EventUC {
+func NewEventHandler(queue Queue) *EventUC {
 	return &EventUC{
-		Queue:  queue,
-		Broker: broker,
+		Queue: queue,
 	}
 }
 
@@ -25,6 +23,16 @@ func (h *EventUC) ProcessEvent(ctx context.Context, event Event) error {
 	return h.Queue.Send(ctx, marshal)
 }
 
-func (h *EventUC) ProcessReadMessage(ctx context.Context, msg Message) error {
-	return h.Broker.ProducerMessage(ctx, msg)
+type MessageUC struct {
+	Broker Broker
+}
+
+func NewMessageHandler(broker Broker) *MessageUC {
+	return &MessageUC{
+		Broker: broker,
+	}
+}
+
+func (m *MessageUC) ProcessReadMessage(ctx context.Context, msg Message) error {
+	return m.Broker.ProducerMessage(ctx, msg)
 }
