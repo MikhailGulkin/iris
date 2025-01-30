@@ -1,59 +1,54 @@
 package main
 
 import (
-	log "api/app/pkg/logger"
-	"api/app/pkg/ws"
+	"api/app/internal/delivery/fabric"
+	rabbitD "api/app/internal/delivery/rabbit"
+	"api/app/internal/delivery/websocket"
+	kafkaP "api/app/internal/infra/kafka"
+	"api/app/internal/usecase"
 	"context"
-	"fmt"
+	"github.com/MikhailGulkin/packages/kafka/producer"
+	log "github.com/MikhailGulkin/packages/logger"
+	"github.com/MikhailGulkin/packages/rabbit"
+	"github.com/MikhailGulkin/packages/ws"
 	"github.com/gin-gonic/gin"
-	"math/rand"
+	"github.com/go-playground/validator/v10"
+	"github.com/google/uuid"
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 )
-
-type ProcessorImpl struct {
-	send chan []byte
-}
-
-func NewProcessorImpl() *ProcessorImpl {
-	return &ProcessorImpl{
-		send: make(chan []byte, 256),
-	}
-}
-
-func (p *ProcessorImpl) ProcessRead(ctx context.Context, messageType int, msg []byte) error {
-	fmt.Println("ProcessRead", messageType, msg)
-	return nil
-}
-
-func (p *ProcessorImpl) ProcessWrite() <-chan []byte {
-	ticker := time.NewTicker(5 * time.Second)
-	go func() {
-		for {
-			select {
-			case <-ticker.C:
-				p.send <- []byte("ping")
-			}
-		}
-	}()
-
-	return p.send
-}
-
-type PipeProcessorFabricImpl struct{}
-
-func (p *PipeProcessorFabricImpl) NewPipeProcessor(ctx context.Context, userID int) (ws.PipeProcessor, error) {
-	return NewProcessorImpl(), nil
-}
 
 func main() {
 	logger := log.Default()
-
-	manager := ws.NewManager(
-		ws.WithProcessorFabric(&PipeProcessorFabricImpl{}),
+	valid := validator.New()
+	kafkaWriter, err := producer.NewProducer(producer.Config{
+		Brokers: []string{"localhost:9092"},
+		Topic:   "user.messages",
+	})
+	if err != nil {
+		return
+	}
+	kafkaProducer := kafkaP.NewProducer(kafkaWriter)
+	messageUc := usecase.NewMessageHandler(kafkaProducer)
+	rabbitConsumerFabric := rabbitD.NewConsumerHandlerFabric(rabbit.Config{
+		URL:          "amqp://guest:guest@localhost:5672/",
+		Exchange:     "user.messages",
+		QueuePattern: "user.id",
+	},
+		logger,
+		valid,
 	)
+
+	readProcessorFabric := websocket.NewReadProcessorFabric(messageUc, valid)
+	queueFabric := fabric.NewQueueFabricImpl(100)
+	pipeProcessorFabric := fabric.NewPipeProcessorFabric(
+		queueFabric,
+		rabbitConsumerFabric,
+		readProcessorFabric,
+	)
+
+	manager := ws.NewManager(ws.WithProcessorFabric(pipeProcessorFabric))
 	defer func() {
 		err := manager.Close()
 		if err != nil {
@@ -66,10 +61,12 @@ func main() {
 		manager.Run(context.Background())
 	}()
 	app.GET("/ws", func(c *gin.Context) {
-		err := manager.Process(rand.Int(), c.Writer, c.Request, nil)
+		err := manager.Process(uuid.New().String(), c.Writer, c.Request, nil)
 		if err != nil {
-			fmt.Println("error", err)
+			logger.Errorw("error processing ws", "error", err)
+			return
 		}
+		return
 	})
 	go func() {
 		app.Run(":8000")
@@ -78,5 +75,4 @@ func main() {
 	exitCh := make(chan os.Signal)
 	signal.Notify(exitCh, os.Interrupt, syscall.SIGTERM)
 	<-exitCh
-
 }
